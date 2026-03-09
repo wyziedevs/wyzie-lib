@@ -6,7 +6,7 @@ const originalFetch = globalThis.fetch;
 const sampleResponse = [
   {
     id: "12345",
-    url: "https://sub.wyzie.ru/c/vrf-abc/id/54321",
+    url: "https://sub.wyzie.io/c/vrf-abc/id/54321",
     format: "srt",
     encoding: "utf-8",
     isHearingImpaired: false,
@@ -129,7 +129,7 @@ describe("parseToVTT", () => {
     });
     globalThis.fetch = mockFetch as unknown as typeof fetch;
 
-    const vtt = await parseToVTT("https://sub.wyzie.ru/c/vrf/id/file");
+    const vtt = await parseToVTT("https://sub.wyzie.io/c/vrf/id/file");
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(vtt.startsWith("WEBVTT")).toBe(true);

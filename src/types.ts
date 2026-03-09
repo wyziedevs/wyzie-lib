@@ -121,7 +121,7 @@ export type QueryParams = {
  * Type for the configuration options for the library.
  */
 export type ConfigurationOptions = {
-  /** The API's hostname (default: sub.wyzie.ru) */
+  /** The API's hostname (default: sub.wyzie.io) */
   baseUrl: string;
 }
 

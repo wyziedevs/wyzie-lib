@@ -2,7 +2,7 @@ import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions,
 
 
 const config = {
-  baseUrl: "https://sub.wyzie.ru"
+  baseUrl: "https://sub.wyzie.io"
 };
 
 /**

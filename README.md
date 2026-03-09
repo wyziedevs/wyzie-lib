@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://sub.wyzie.ru/">
+  <a href="https://sub.wyzie.io/">
     <img src="https://i.postimg.cc/L5ppKYC5/cclogo.png" height="120">
     <h1 align="center">Wyzie Lib</h1>
   </a>

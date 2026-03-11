@@ -28,6 +28,8 @@ export type SearchSubtitlesParams = (
   origin?: string | string[];
   /** Bypass cache and fetch fresh results from sources. */
   refresh?: boolean;
+  /** Your Wyzie Subs API key (required). Get one at https://sub.wyzie.ru/redeem */
+  key?: string;
   /** Additional parameters that can be used for filtering or other purposes. */
   [key: string]: any;
 } & (
@@ -122,7 +124,9 @@ export type QueryParams = {
  */
 export type ConfigurationOptions = {
   /** The API's hostname (default: sub.wyzie.io) */
-  baseUrl: string;
+  baseUrl?: string;
+  /** Your Wyzie Subs API key. Get one at https://sub.wyzie.ru/redeem */
+  key?: string;
 }
 
 /**

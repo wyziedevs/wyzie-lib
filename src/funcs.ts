@@ -1,7 +1,7 @@
 import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails } from "./types";
 
 
-const config = {
+const config: { baseUrl: string; key?: string } = {
   baseUrl: "https://sub.wyzie.io"
 };
 
@@ -9,11 +9,13 @@ const config = {
  * Configure the library settings.
  * 
  * @param {ConfigurationOptions} options - Config options for the library.
- * @throws {Error} Throws an error if the baseUrl is not provided.
  */
 export function configure(options: ConfigurationOptions) {
   if (options.baseUrl) {
     config.baseUrl = options.baseUrl.replace(/\/$/, '');
+  }
+  if (options.key !== undefined) {
+    config.key = options.key;
   }
 }
 
@@ -86,6 +88,11 @@ async function constructUrl({
       }
     }
   });
+
+  // Apply global key from configure() if not already set per-request
+  if (!url.searchParams.has("key") && config.key) {
+    url.searchParams.append("key", config.key);
+  }
 
   return url;
 }

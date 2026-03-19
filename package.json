@@ -1,6 +1,6 @@
 {
   "name": "wyzie-lib",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "icon": "https://i.postimg.cc/L5ppKYC5/cclogo.png",
   "license": "MIT",
   "keywords": [
@@ -62,6 +62,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc",
+    "prepublishOnly": "npm run build",
     "test": "npx vitest",
     "format": "prettier --log-level warn --write \"{src/**/*.{ts},*.{ts,js,html,css,json,md,xml}}\"",
     "preview": "vite preview"

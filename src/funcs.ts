@@ -68,7 +68,8 @@ async function constructUrl({
     file: Array.isArray(file) ? file.join(",") : file,
     fileName: Array.isArray(fileName) ? fileName.join(",") : fileName,
     origin: Array.isArray(origin) ? origin.join(",") : origin,
-    hi,
+    // Only send when true: the API treats any non-empty value as enabled.
+    hi: hi ? true : undefined,
     refresh,
   };
 
@@ -204,7 +205,9 @@ export async function searchTmdb(query: string, language: string = "en-US"): Pro
   if (!response.ok) {
     throw new Error(`Failed to search TMDB: ${response.status}`);
   }
-  return response.json();
+  // The API wraps results as { results: [...] }
+  const data = await response.json();
+  return Array.isArray(data) ? data : (data?.results ?? []);
 }
 
 /**

@@ -153,10 +153,10 @@ describe("parseToVTT", () => {
 
 describe("searchTmdb", () => {
   it("calls the TMDB search API correctly", async () => {
-    const mockResponse = [{ id: 123, name: "Test Show", media_type: "tv" }];
+    const mockResponse = [{ id: 123, title: "Test Show", mediaType: "tv" }];
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => mockResponse,
+      json: async () => ({ results: mockResponse }),
     });
     globalThis.fetch = mockFetch as unknown as typeof fetch;
 

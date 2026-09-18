@@ -48,9 +48,9 @@ export type SubtitleData = {
   /** The subtitle file's URL. */
   url: string;
   /** The format of the subtitle file. */
-  format: string;
+  format: string | null;
   /** The subtitle file's character encoding. (UTF-8, ASCII, ETC) */
-  encoding: string;
+  encoding: string | null;
   /** Boolean indicating if the subtitle's is hearing impaired. */
   isHearingImpaired: boolean;
   /** URL to a PNG of the flag of the subtitle's language. */
@@ -77,6 +77,8 @@ export type SubtitleData = {
   matchedRelease?: string | null;
   /** Which user-supplied filter matched. */
   matchedFilter?: string | null;
+  /** True when the subtitle is an AI translation rather than a scraped file. */
+  ai?: boolean;
 };
 
 /**
@@ -134,18 +136,19 @@ export type ConfigurationOptions = {
  */
 export type TmdbSearchResult = {
   id: number;
-  media_type: string;
-  title?: string;
-  name?: string;
-  original_title?: string;
-  original_name?: string;
-  overview?: string;
-  release_date?: string;
-  first_air_date?: string;
-  poster_path?: string | null;
-  backdrop_path?: string | null;
-  popularity?: number;
-  vote_average?: number;
+  /** "movie" or "tv". */
+  mediaType: string;
+  title: string;
+  originalTitle: string | null;
+  overview: string;
+  /** Four digit year, or null when unknown. */
+  releaseYear: string | null;
+  /** Full URL to the poster image. */
+  poster: string | null;
+  /** Full URL to the backdrop image. */
+  backdrop: string | null;
+  voteAverage: number | null;
+  popularity: number | null;
 };
 
 /**

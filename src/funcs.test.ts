@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseToVTT, searchSubtitles, searchTmdb, getTvDetails, getSeasonDetails, getSources, getSourcesInfo, configure, withDownloadOptions, syncSubtitle, detectSpeech, WyzieError } from "./main";
+import { parseToVTT, searchSubtitles, searchTmdb, getTvDetails, getSeasonDetails, getSources, getSourcesInfo, getStatus, configure, withDownloadOptions, syncSubtitle, detectSpeech, WyzieError } from "./main";
 
 const originalFetch = globalThis.fetch;
 
@@ -287,6 +287,18 @@ describe("sources", () => {
     globalThis.fetch = mockFetch as unknown as typeof fetch;
     await expect(getSources()).resolves.toEqual(["charlie", "foxtrot"]);
     expect(mockFetch.mock.calls[0][0]).toBe("https://sub.wyzie.io/sources");
+  });
+
+  it("getStatus fetches /status/api with a clamped days param", async () => {
+    const report = { status: "operational", summary: "All systems operational", sources: {}, incidents: [] };
+    const mockFetch = vi.fn().mockResolvedValue(jsonResponse(200, report));
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+    await expect(getStatus()).resolves.toEqual(report);
+    const first = new URL(mockFetch.mock.calls[0][0] as string);
+    expect(first.pathname).toBe("/status/api");
+    expect(first.searchParams.get("days")).toBe("0");
+    await getStatus(500);
+    expect(new URL(mockFetch.mock.calls[1][0] as string).searchParams.get("days")).toBe("90");
   });
 
   it("getSourcesInfo returns the full response and scopes to a key", async () => {

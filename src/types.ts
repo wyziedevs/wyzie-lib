@@ -311,3 +311,43 @@ export type SeasonDetails = {
   season_number: number;
   id: string;
 };
+
+/** Uptime percentages over rolling windows; null before there is data. */
+export type UptimeWindows = { "24h": number | null; "7d": number | null; "30d": number | null; "90d": number | null };
+
+/** One UTC day of uptime. */
+export type DayUptime = { date: string; uptime: number | null; downMinutes: number | null };
+
+/** One source in {@link StatusReport}. */
+export type SourceStatus = {
+  name: string;
+  tier: "free" | "paid";
+  tags: string[];
+  /** The last check's verdict. */
+  status: "operational" | "degraded" | "down" | "unsupported" | "pending";
+  movies: SourceStatus["status"];
+  tv: SourceStatus["status"];
+  /** suspect: failed one check; paused: failed two in a row, out of /sources until a check passes. */
+  state: "online" | "suspect" | "paused";
+  /** In /sources and source=all right now. */
+  listed: boolean;
+  pausedSince: string | null;
+  latencyMs: number | null;
+  lastChecked: string | null;
+  nextCheck: string | null;
+  uptime: UptimeWindows;
+  history?: DayUptime[];
+};
+
+/** The /status/api response (see https://docs.wyzie.io/subs/usage/status). */
+export type StatusReport = {
+  status: "operational" | "degraded" | "partial_outage";
+  summary: string;
+  updatedAt: string;
+  trackingSince: string | null;
+  api: { status: "operational"; uptime: UptimeWindows; history?: DayUptime[] };
+  /** Keyed by source codename. */
+  sources: Record<string, SourceStatus>;
+  incidents: { source: string; start: string; end: string | null; ongoing: boolean; minutes: number }[];
+  docs: string;
+};

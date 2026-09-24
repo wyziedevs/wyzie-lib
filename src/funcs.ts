@@ -1,4 +1,4 @@
-import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails, SourcesResponse, DownloadOptions, SyncParams, SyncResult } from "./types";
+import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails, SourcesResponse, DownloadOptions, SyncParams, SyncResult, StatusReport } from "./types";
 
 
 const config: { baseUrl: string; key?: string } = {
@@ -339,6 +339,20 @@ export async function getSourcesInfo(key: string | undefined = config.key): Prom
   const url = new URL(`${config.baseUrl}/sources`);
   if (key) url.searchParams.append("key", key);
   return getJson<SourcesResponse>(url.toString(), "Failed to fetch sources");
+}
+
+/**
+ * Fetches the Wyzie Subs status and uptime report (/status/api): overall
+ * status, each source's state, uptime over 24h/7d/30d/90d and recent
+ * incidents. Free, no key needed; the server caches it for 60 seconds.
+ *
+ * @param {number} [days=0] - Days of per-day history to include (0-90).
+ * @returns {Promise<StatusReport>} A promise that resolves to the status report.
+ */
+export async function getStatus(days: number = 0): Promise<StatusReport> {
+  const url = new URL(`${config.baseUrl}/status/api`);
+  url.searchParams.set("days", String(Math.max(0, Math.min(90, Math.floor(days) || 0))));
+  return getJson<StatusReport>(url.toString(), "Failed to fetch status");
 }
 
 /**

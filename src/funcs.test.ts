@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseToVTT, searchSubtitles, searchTmdb, getTvDetails, getSeasonDetails, getSources, getSourcesInfo, configure, WyzieError } from "./main";
+import { parseToVTT, searchSubtitles, searchTmdb, getTvDetails, getSeasonDetails, getSources, getSourcesInfo, configure, withDownloadOptions, WyzieError } from "./main";
 
 const originalFetch = globalThis.fetch;
 
@@ -363,5 +363,50 @@ describe("getSeasonDetails", () => {
     const requestUrl = mockFetch.mock.calls[0][0];
     expect(requestUrl).toContain("/api/tmdb/tv/123/1");
     expect(result).toEqual(mockResponse);
+  });
+});
+
+describe("withDownloadOptions", () => {
+  const link = "https://sub.wyzie.io/c/vrf/id/123?format=srt&id=tt0111161&tok=2.abc%2Bdef";
+
+  it("adds the options and keeps the token and other parameters", () => {
+    const url = new URL(
+      withDownloadOptions(link, { to: "vtt", offset: -1.5, fps: [25, 23.976], plain: true, sdh: true, clean: true, dual: "ja" }),
+    );
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      format: "srt",
+      id: "tt0111161",
+      tok: "2.abc+def",
+      to: "vtt",
+      offset: "-1.5",
+      fps: "25:23.976",
+      plain: "1",
+      sdh: "strip",
+      clean: "1",
+      dual: "ja",
+    });
+  });
+
+  it("accepts a search result and leaves unset options out", () => {
+    const url = new URL(withDownloadOptions({ url: link }, { to: "srt", offset: 0, plain: false }));
+    expect(url.searchParams.get("to")).toBe("srt");
+    expect(url.searchParams.has("offset")).toBe(false);
+    expect(url.searchParams.has("plain")).toBe(false);
+  });
+});
+
+describe("parseToVTT server-side conversion", () => {
+  it("asks a Wyzie download link for WebVTT", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "WEBVTT\n\n00:01.000 --> 00:02.000\nHi\n" });
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+    await parseToVTT("https://sub.wyzie.io/c/x/id/1?tok=t");
+    expect(new URL(mockFetch.mock.calls[0][0] as string).searchParams.get("to")).toBe("vtt");
+  });
+
+  it("leaves other URLs alone", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => "1\n00:00:01,000 --> 00:00:02,000\nHi\n" });
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+    await parseToVTT("https://example.com/file.srt");
+    expect(mockFetch.mock.calls[0][0]).toBe("https://example.com/file.srt");
   });
 });

@@ -1,4 +1,4 @@
-import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails, SourcesResponse } from "./types";
+import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails, SourcesResponse, DownloadOptions } from "./types";
 
 
 const config: { baseUrl: string; key?: string } = {
@@ -222,8 +222,35 @@ function srtToVtt(content: string): string {
 }
 
 /**
+ * Adds download options to a subtitle's download link (the `url` of a
+ * {@link searchSubtitles} result), e.g. to get WebVTT, fix timing or add a
+ * second language. The link's token and other parameters are kept.
+ *
+ * @example
+ * const url = withDownloadOptions(subtitles[0], { to: "vtt", offset: -1.5 });
+ * video.querySelector("track").src = url;
+ *
+ * @param {string | { url: string }} subtitle - A download URL, or a subtitle result.
+ * @param {DownloadOptions} options - The options to apply.
+ * @returns {string} The download URL with the options added.
+ */
+export function withDownloadOptions(subtitle: string | Pick<SubtitleData, "url">, options: DownloadOptions): string {
+  const url = new URL(typeof subtitle === "string" ? subtitle : subtitle.url);
+  const set = (name: string, value: string) => url.searchParams.set(name, value);
+  if (options.to) set("to", options.to);
+  if (options.offset) set("offset", String(options.offset));
+  if (options.fps) set("fps", `${options.fps[0]}:${options.fps[1]}`);
+  if (options.plain) set("plain", "1");
+  if (options.sdh) set("sdh", "strip");
+  if (options.clean) set("clean", "1");
+  if (options.dual) set("dual", options.dual);
+  return url.toString();
+}
+
+/**
  * Fetches a subtitle (usually a `url` from {@link searchSubtitles}) and returns
- * it as WebVTT. SRT is converted; a file that is already WebVTT is returned
+ * it as WebVTT. Wyzie download links are converted by the server (any format);
+ * other SRT is converted here, and a file that is already WebVTT is returned
  * as-is.
  *
  * @param {string} subtitleUrl - The URL of the subtitle to parse.
@@ -232,7 +259,13 @@ function srtToVtt(content: string): string {
  * @throws {Error} When the content is neither SRT nor WebVTT.
  */
 export async function parseToVTT(subtitleUrl: string): Promise<string> {
-  const response = await fetch(subtitleUrl);
+  let url = subtitleUrl;
+  try {
+    if (new URL(subtitleUrl).pathname.startsWith("/c/")) url = withDownloadOptions(subtitleUrl, { to: "vtt" });
+  } catch {
+    // not an absolute URL: fetch it as given
+  }
+  const response = await fetch(url);
   if (!response.ok) {
     throw new WyzieError("Failed to fetch subtitle content", response.status, await readErrorBody(response));
   }

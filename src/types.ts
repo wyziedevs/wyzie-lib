@@ -166,6 +166,29 @@ export type QueryParams = {
 }
 
 /**
+ * Options applied when a subtitle is downloaded: query parameters on its `url`.
+ * Use {@link withDownloadOptions} to add them. Free and Pro keys can use every
+ * option except sdh, clean and dual, which need a Pro key (a free key gets a
+ * 403 "Paid feature", not billed).
+ */
+export type DownloadOptions = {
+  /** Output format. "vtt" plays directly in a browser `<track>` element. Default: the file's own format. */
+  to?: "srt" | "vtt";
+  /** Shift every line by this many seconds (negative is earlier). */
+  offset?: number;
+  /** Fix frame-rate drift from a subtitle made for another release: [subtitleFps, videoFps], e.g. [25, 23.976]. */
+  fps?: [number, number];
+  /** Strip styling codes ({\an8}, <font>), drop empty and repeated lines, fix ordering and small overlaps. */
+  plain?: boolean;
+  /** Pro: remove hearing-impaired text ([DOOR SLAMS], (sighs), JOHN: labels, ♪ lyrics). */
+  sdh?: boolean;
+  /** Pro: mask strong profanity, keeping the first letter (English files). */
+  clean?: boolean;
+  /** Pro: ISO 639-1 code of a second language shown under each line. Costs 1 extra request, only when a match is found. */
+  dual?: string;
+};
+
+/**
  * Type for the configuration options for the library.
  */
 export type ConfigurationOptions = {

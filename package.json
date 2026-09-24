@@ -25,17 +25,17 @@
   ],
   "exports": {
     ".": {
-      "import": {
-        "types": "./lib/main.d.ts",
-        "default": "./lib/main.js"
-      },
-      "require": {
-        "types": "./lib/main.d.ts",
-        "default": "./lib/main.cjs"
-      },
       "umd": {
         "types": "./lib/main.d.ts",
         "default": "./lib/main.umd.cjs"
+      },
+      "amd": {
+        "types": "./lib/main.d.ts",
+        "default": "./lib/main.amd.js"
+      },
+      "iife": {
+        "types": "./lib/main.d.ts",
+        "default": "./lib/main.iife.js"
       },
       "es": {
         "types": "./lib/main.d.ts",
@@ -45,13 +45,13 @@
         "types": "./lib/main.d.ts",
         "default": "./lib/main.cjs"
       },
-      "iife": {
+      "import": {
         "types": "./lib/main.d.ts",
-        "default": "./lib/main.iife.js"
+        "default": "./lib/main.js"
       },
-      "amd": {
+      "require": {
         "types": "./lib/main.d.ts",
-        "default": "./lib/main.amd.js"
+        "default": "./lib/main.cjs"
       }
     }
   },
@@ -70,8 +70,8 @@
   "devDependencies": {
     "prettier": "^3.7.4",
     "typescript": "^5.9.3",
-    "vite": "^4.5.14",
+    "vite": "^7.3.6",
     "vite-plugin-dts": "^4.5.4",
-    "vitest": "^2.1.9"
+    "vitest": "^5.0.1"
   }
 }

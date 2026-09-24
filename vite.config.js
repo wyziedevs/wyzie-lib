@@ -10,6 +10,9 @@ const dependencies = pkg.dependencies ? Object.keys(pkg.dependencies) : [];
 
 export default defineConfig({
   build: {
+    // Same syntax level the package has always shipped (vite 7 would default
+    // to a newer baseline, e.g. native class fields).
+    target: "es2020",
     minify: false,
     rollupOptions: {
       external: dependencies,

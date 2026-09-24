@@ -347,7 +347,7 @@ export async function getSourcesInfo(key: string | undefined = config.key): Prom
  * let Wyzie pick the subtitle that fits best, plus the audio: the speech that
  * {@link detectSpeech} found in it, or the audio/video file itself.
  *
- * Each successful sync costs 1 request; a sync that finds no match is not
+ * Each successful sync costs 5 requests; a sync that finds no match is not
  * charged. The result's `url` is a normal download link with the fix applied.
  *
  * @example

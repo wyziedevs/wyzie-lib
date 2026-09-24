@@ -68,7 +68,16 @@
       .controls {
         margin: 1rem 0;
         display: flex;
+        flex-wrap: wrap;
         gap: 1rem;
+      }
+
+      .controls input {
+        flex: 1 1 16rem;
+        padding: 0.75rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 1rem;
       }
 
       button {
@@ -142,7 +151,7 @@
           how to:
         </p>
         <ul>
-          <li>Fetch subtitles using the Wyzie Subs API</li>
+          <li>Fetch subtitles using the Wyzie Subs API (needs an API key: get a free one at store.wyzie.io/redeem)</li>
           <li>Parse and convert subtitles to VTT format</li>
           <li>Add subtitles to an HTML5 video player</li>
           <li>Toggle subtitle visibility</li>
@@ -159,6 +168,7 @@
         </video>
 
         <div class="controls">
+          <input id="api-key" type="text" placeholder="Your API key (wyzie-...)" autocomplete="off" />
           <button onclick="loadSubtitles()">Load Subtitles</button>
           <button onclick="toggleSubtitles()">Toggle Subtitles</button>
         </div>
@@ -209,10 +219,16 @@
           status.textContent = "Loading subtitles...";
           status.className = "";
 
+          const key = document.getElementById("api-key").value.trim();
+          if (!key) {
+            throw new Error("Enter your API key first (free at store.wyzie.io/redeem)");
+          }
+
           const subtitles = await searchSubtitles({
             tmdb_id: 286217,
             format: "srt",
-            encoding: "utf-8",
+            language: "en",
+            key,
           });
 
           if (!subtitles.length) {

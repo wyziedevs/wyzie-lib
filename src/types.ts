@@ -16,7 +16,12 @@ export type SearchSubtitlesParams = (
   format?: string | string[];
   /** When true, only hearing-impaired subtitles are returned. */
   hi?: boolean;
-  /** The source where the subtitle will be scraped. Accepts a single value or a list. */
+  /**
+   * Source codename(s) to query, e.g. "charlie" or ["charlie", "lima"], or
+   * "all" for every live source your key can use (default: charlie). See
+   * getSources() for the live list; naming only sources that are paused by
+   * their health checks rejects with a 503 WyzieError.
+   */
   source?: string | string[];
   /** Filter by specific release group or name (can be a list). */
   release?: string | string[];
@@ -28,6 +33,10 @@ export type SearchSubtitlesParams = (
   origin?: string | string[];
   /** Bypass cache and fetch fresh results from sources. */
   refresh?: boolean;
+  /** Results per page (1 to 200). Without it every result comes back at once. */
+  limit?: number;
+  /** Page to return, starting at 1. Only used together with limit. */
+  page?: number;
   /** Your Wyzie Subs API key (required). Get one at https://store.wyzie.io/redeem */
   key?: string;
   /** Additional parameters that can be used for filtering or other purposes. */
@@ -43,7 +52,7 @@ export type SearchSubtitlesParams = (
  * Data structure representing a single subtitle object.
  */
 export type SubtitleData = {
-  /** Unique identifier (either TMDB or IMDB ID). */
+  /** The subtitle file's ID. */
   id: string;
   /** The subtitle file's download URL (https://sub.wyzie.io/c/..., carries an encrypted tok; each download costs 1 request). */
   url: string;
@@ -51,7 +60,7 @@ export type SubtitleData = {
   format: string | null;
   /** The subtitle file's character encoding. (UTF-8, ASCII, ETC) */
   encoding: string | null;
-  /** Boolean indicating if the subtitle's is hearing impaired. */
+  /** True when the subtitle is for the hearing impaired (SDH / CC). */
   isHearingImpaired: boolean;
   /** URL to a PNG of the flag of the subtitle's language. */
   flagUrl: string;
@@ -95,7 +104,7 @@ export type SourcesResponse = {
   free: string[];
   /** Sources that require a Pro key (empty when allFree is true). */
   paid: string[];
-  /** One entry per enabled source. */
+  /** One entry per live source. */
   tiered: {
     /** The codename to pass as `source` (e.g. charlie). */
     key: string;
@@ -108,7 +117,7 @@ export type SourcesResponse = {
     /** Only present when a valid key was passed: whether that key can query this source. */
     available?: boolean;
   }[];
-  /** True when every enabled source is available to all keys (paid is then empty). */
+  /** True when every source is available to all keys (paid is then empty). */
   allFree: boolean;
   /**
    * Only present when a key was passed. valid is false for a malformed or unknown key,
@@ -120,7 +129,7 @@ export type SourcesResponse = {
     | { valid: null; reason: "verification_unavailable" };
   /** Only present for a valid key: sources that key can query. */
   available?: string[];
-  /** Only present for a valid key: enabled sources that key cannot query. */
+  /** Only present for a valid key: live sources that key cannot query. */
   restricted?: string[];
 };
 

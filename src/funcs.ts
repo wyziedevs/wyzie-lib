@@ -1,4 +1,4 @@
-import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails } from "./types";
+import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails, SourcesResponse } from "./types";
 
 
 const config: { baseUrl: string; key?: string } = {
@@ -6,8 +6,57 @@ const config: { baseUrl: string; key?: string } = {
 };
 
 /**
+ * Error thrown when the API answers with a non-2xx status.
+ *
+ * `status` is the HTTP status. `body` is the API's JSON error when it sent one:
+ * `message` and `details`, plus extra fields for some errors (`topup` on 402,
+ * `reset_at` on 429, `reinstate` for a key on hold, `offline` when every
+ * requested source is paused by its health checks).
+ */
+export class WyzieError extends Error {
+  /** HTTP status of the failed response. */
+  readonly status: number;
+  /** The API's short error message, e.g. "Invalid API key". */
+  readonly apiMessage?: string;
+  /** The API's longer explanation, when it sent one. */
+  readonly details?: string;
+  /** The full JSON error body, when the response had one. */
+  readonly body?: Record<string, unknown>;
+
+  constructor(prefix: string, status: number, body?: Record<string, unknown>) {
+    const apiMessage = typeof body?.message === "string" ? body.message : undefined;
+    const details = typeof body?.details === "string" ? body.details : undefined;
+    super(`${prefix}: ${status}${apiMessage ? ` ${apiMessage}` : ""}${details ? ` (${details})` : ""}`);
+    this.name = "WyzieError";
+    this.status = status;
+    this.apiMessage = apiMessage;
+    this.details = details;
+    this.body = body;
+  }
+}
+
+/** The JSON error body of a failed response, if it has one. */
+async function readErrorBody(response: Response): Promise<Record<string, unknown> | undefined> {
+  try {
+    const parsed = JSON.parse(await response.text());
+    return parsed && typeof parsed === "object" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Fetch a URL and return its JSON, throwing a WyzieError on a non-2xx status. */
+async function getJson<T>(url: string, errorPrefix: string): Promise<T> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new WyzieError(errorPrefix, response.status, await readErrorBody(response));
+  }
+  return response.json();
+}
+
+/**
  * Configure the library settings.
- * 
+ *
  * @param {ConfigurationOptions} options - Config options for the library.
  */
 export function configure(options: ConfigurationOptions) {
@@ -54,7 +103,7 @@ async function constructUrl({
   }
 
   const url = new URL(`${config.baseUrl}/search`);
-  
+
   const queryParams: QueryParams = {
     id: String(tmdb_id || imdb_id),
     season,
@@ -98,95 +147,100 @@ async function constructUrl({
   return url;
 }
 
-/**
- * Fetches subtitles from the provided URL.
- *
- * @param {URL} url - The URL to fetch subtitles from.
- * @returns {Promise<SubtitleData[]>} A promise that resolves to an array of subtitle data.
- * @throws {Error} Throws an error if fetching subtitles fails.
- */
-async function fetchSubtitles(url: URL): Promise<SubtitleData[]> {
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return response.json();
-}
+// The API answers "nothing matched" with a 400; for a search that is an empty
+// result, not a failure.
+const NO_RESULTS_MESSAGES = new Set(["No subtitles found", "No matching release found"]);
 
 /**
  * Searches for subtitles based on the provided parameters.
  *
+ * Resolves to an empty array when nothing matches. Any other API refusal
+ * (missing or invalid key, key on hold, balance or daily limit used up, every
+ * requested source paused) rejects with a {@link WyzieError} carrying the
+ * HTTP status and the API's message.
+ *
  * @param {SearchSubtitlesParams} params - The parameters for searching: SearchSubtitlesParams.
  * @returns {Promise<SubtitleData[]>} A promise that resolves to an array of subtitle data.
- * @throws {Error} Throws an error if fetching subtitles fails or something goes wrong.
+ * @throws {WyzieError} When the API refuses the search.
+ * @throws {Error} When the parameters are invalid or the request can't be sent.
  */
 export async function searchSubtitles(params: SearchSubtitlesParams): Promise<SubtitleData[]> {
+  let response: Response;
   try {
     const url = await constructUrl(params);
-    return await fetchSubtitles(url);
+    response = await fetch(url.toString());
   } catch (error) {
     throw new Error(`Error fetching subtitles: ${error}`);
   }
+  if (!response.ok) {
+    const body = await readErrorBody(response);
+    if (response.status === 400 && NO_RESULTS_MESSAGES.has(String(body?.message))) return [];
+    throw new WyzieError("Error fetching subtitles", response.status, body);
+  }
+  return response.json();
+}
+
+const SRT_TIMESTAMP = /^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})/;
+
+/** "1:02:03,456" parts → "01:02:03.456" (VTT needs two-digit hours). */
+function vttTime(h: string, m: string, s: string, ms: string): string {
+  return `${h.padStart(2, "0")}:${m}:${s}.${ms}`;
 }
 
 /**
- * Parses subtitle content from a URL to VTT format.
+ * Converts SRT text to WebVTT. Cues are read by their timestamp lines, so
+ * files with missing blank lines between cues still convert, and dialogue
+ * that is only a number (e.g. "1999") is kept. SRT position settings after
+ * the timestamp are dropped (they have no VTT equivalent).
+ */
+function srtToVtt(content: string): string {
+  const lines = content.replace(/^﻿/, "").replace(/\r\n|\r/g, "\n").split("\n");
+  const cues: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const match = SRT_TIMESTAMP.exec(lines[i].trim());
+    if (!match) continue;
+    const text: string[] = [];
+    let j = i + 1;
+    while (j < lines.length && lines[j].trim() !== "" && !SRT_TIMESTAMP.test(lines[j].trim())) {
+      text.push(lines[j].trim());
+      j++;
+    }
+    // Ran into the next cue without a blank line: its index number was read as text.
+    if (j < lines.length && SRT_TIMESTAMP.test(lines[j].trim()) && /^\d+$/.test(text[text.length - 1] ?? "")) {
+      text.pop();
+    }
+    if (text.length > 0) {
+      const [, h1, m1, s1, ms1, h2, m2, s2, ms2] = match;
+      cues.push(`${vttTime(h1, m1, s1, ms1)} --> ${vttTime(h2, m2, s2, ms2)}\n${text.join("\n")}`);
+    }
+    i = j - 1;
+  }
+  if (cues.length === 0) {
+    throw new Error("Invalid subtitle format: not SRT");
+  }
+  return `WEBVTT\n\n${cues.join("\n\n")}\n\n`;
+}
+
+/**
+ * Fetches a subtitle (usually a `url` from {@link searchSubtitles}) and returns
+ * it as WebVTT. SRT is converted; a file that is already WebVTT is returned
+ * as-is.
  *
  * @param {string} subtitleUrl - The URL of the subtitle to parse.
  * @returns {Promise<string>} A promise that resolves to the subtitle content in VTT format.
- * @throws {Error} Throws an error if fetching or parsing the subtitle content fails.
+ * @throws {WyzieError} When the download is refused (e.g. expired link, balance used up).
+ * @throws {Error} When the content is neither SRT nor WebVTT.
  */
 export async function parseToVTT(subtitleUrl: string): Promise<string> {
-  try {
-    const response = await fetch(subtitleUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch subtitle content: ${response.status}`);
-    }
-
-    const content = await response.text();
-    const normalizedContent = content.replace(/\r\n|\r/g, "\n").trim();
-    const blocks = normalizedContent.split(/\n\n+/);
-    const timestampRegex = /^\d{1,2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{3}$/;
-
-
-    const hasValidSRTFormat = blocks.some((block) => {
-      const lines = block.split("\n").map((line) => line.trim());
-      return lines.some((line) => timestampRegex.test(line));
-    });
-    if (!hasValidSRTFormat) {
-      throw new Error("Invalid subtitle format: not SRT");
-    }
-
-    const vttLines: string[] = ["WEBVTT", ""];
-
-    for (const block of blocks) {
-      const lines = block
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-      if (lines.length < 2) continue;
-      const timestampIndex = lines.findIndex((line) => timestampRegex.test(line));
-      if (timestampIndex === -1) continue;
-      const textLines = lines.slice(timestampIndex + 1).filter((line) => !/^\d+$/.test(line));
-      if (textLines.length === 0) continue;
-      let timestampLine = lines[timestampIndex];
-      timestampLine = timestampLine
-        .replace(/[,.](?=\s*-->)/, "")
-        .replace(/[,.]$/, "")
-        .replace(/,(\d{3})/g, ".$1");
-      vttLines.push(`${timestampLine}\n${textLines.join("\n")}\n`);
-    }
-
-    return (
-      vttLines
-        .join("\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim() + "\n\n"
-    );
-  } catch (error) {
-    console.error("Error in parseToVTT:", error);
-    throw error;
+  const response = await fetch(subtitleUrl);
+  if (!response.ok) {
+    throw new WyzieError("Failed to fetch subtitle content", response.status, await readErrorBody(response));
   }
+  const content = (await response.text()).replace(/^﻿/, "");
+  if (/^WEBVTT/.test(content.trimStart())) {
+    return content.replace(/\r\n|\r/g, "\n").trim() + "\n\n";
+  }
+  return srtToVtt(content);
 }
 
 /**
@@ -201,12 +255,8 @@ export async function searchTmdb(query: string, language: string = "en-US"): Pro
   url.searchParams.append("q", query);
   url.searchParams.append("language", language);
 
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    throw new Error(`Failed to search TMDB: ${response.status}`);
-  }
   // The API wraps results as { results: [...] }
-  const data = await response.json();
+  const data = await getJson<any>(url.toString(), "Failed to search TMDB");
   return Array.isArray(data) ? data : (data?.results ?? []);
 }
 
@@ -217,12 +267,7 @@ export async function searchTmdb(query: string, language: string = "en-US"): Pro
  * @returns {Promise<TvDetails>} A promise that resolves to the TV show details.
  */
 export async function getTvDetails(id: number): Promise<TvDetails> {
-  const url = `${config.baseUrl}/api/tmdb/tv/${id}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch TV details: ${response.status}`);
-  }
-  return response.json();
+  return getJson<TvDetails>(`${config.baseUrl}/api/tmdb/tv/${id}`, "Failed to fetch TV details");
 }
 
 /**
@@ -233,25 +278,32 @@ export async function getTvDetails(id: number): Promise<TvDetails> {
  * @returns {Promise<SeasonDetails>} A promise that resolves to the season details.
  */
 export async function getSeasonDetails(id: number, season: number): Promise<SeasonDetails> {
-  const url = `${config.baseUrl}/api/tmdb/tv/${id}/${season}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch season details: ${response.status}`);
-  }
-  return response.json();
+  return getJson<SeasonDetails>(`${config.baseUrl}/api/tmdb/tv/${id}/${season}`, "Failed to fetch season details");
 }
 
 /**
- * Fetches the list of currently enabled subtitle sources.
+ * Fetches the codenames of the live subtitle sources: enabled and passing
+ * their hourly health checks. A source failing its checks is left out until
+ * it recovers, so fetch this rather than hard-coding the list.
  *
- * @returns {Promise<string[]>} A promise that resolves to an array of enabled source names.
+ * @returns {Promise<string[]>} A promise that resolves to an array of source codenames.
  */
 export async function getSources(): Promise<string[]> {
-  const url = `${config.baseUrl}/sources`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch sources: ${response.status}`);
-  }
-  const data = await response.json();
+  const data = await getJson<SourcesResponse>(`${config.baseUrl}/sources`, "Failed to fetch sources");
   return data.sources;
+}
+
+/**
+ * Fetches the full /sources response: every live source with its tier
+ * (free or paid) and tags. With a key (the one passed here, or else the one
+ * from {@link configure}) it also says which sources that key can use
+ * (`available` / `restricted`). Checking a key this way costs no requests.
+ *
+ * @param {string} [key] - API key to check; defaults to the configured key.
+ * @returns {Promise<SourcesResponse>} A promise that resolves to the /sources response.
+ */
+export async function getSourcesInfo(key: string | undefined = config.key): Promise<SourcesResponse> {
+  const url = new URL(`${config.baseUrl}/sources`);
+  if (key) url.searchParams.append("key", key);
+  return getJson<SourcesResponse>(url.toString(), "Failed to fetch sources");
 }

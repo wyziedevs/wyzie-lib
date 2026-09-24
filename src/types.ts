@@ -8,13 +8,13 @@ export type SearchSubtitlesParams = (
   /** The IMDB ID of the media you want subtitles for (either TMDB or IMDB ID). */
   | { imdb_id: string; tmdb_id?: never }
 ) & {
-  /** ISO 3166 code or codes of the subtitle desired. */
+  /** ISO 639-1 language code or codes of the subtitle desired (e.g. en). */
   language?: string | string[];
   /** The subtitle file's character encoding or encodings.  */
   encoding?: string | string[];
   /** Which subtitle file format(s) you want. */
   format?: string | string[];
-  /** Determines if you get hearing impaired subtitles. */
+  /** When true, only hearing-impaired subtitles are returned. */
   hi?: boolean;
   /** The source where the subtitle will be scraped. Accepts a single value or a list. */
   source?: string | string[];
@@ -45,7 +45,7 @@ export type SearchSubtitlesParams = (
 export type SubtitleData = {
   /** Unique identifier (either TMDB or IMDB ID). */
   id: string;
-  /** The subtitle file's URL. */
+  /** The subtitle file's download URL (https://sub.wyzie.io/c/..., carries an encrypted tok; each download costs 1 request). */
   url: string;
   /** The format of the subtitle file. */
   format: string | null;
@@ -59,9 +59,9 @@ export type SubtitleData = {
   media: string;
   /** The display language; Example: English. */
   display: string;
-  /** ISO 3166 code; Example: en (2 alphabetic letters). */
+  /** ISO 639-1 language code; Example: en (2 alphabetic letters). */
   language: string;
-  /** The subtitle's source (ex: subdl, subf2m, opensubtitles). */
+  /** The subtitle's source codename (ex: charlie, lima), or "ai" for AI translations. */
   source?: string | string[];
   /** The release name of the subtitle. */
   release?: string | null;
@@ -82,11 +82,46 @@ export type SubtitleData = {
 };
 
 /**
- * Response from the /sources endpoint.
+ * Response from the /sources endpoint (GET /sources, optionally with ?key=YOUR_KEY).
  */
 export type SourcesResponse = {
-  /** List of currently enabled subtitle sources. */
+  /**
+   * Codenames of every live source: enabled and passing its hourly health
+   * check. A source that fails two checks in a row is left out of every list
+   * in this response until it passes again.
+   */
   sources: string[];
+  /** Sources any key can query, including free keys. */
+  free: string[];
+  /** Sources that require a Pro key (empty when allFree is true). */
+  paid: string[];
+  /** One entry per enabled source. */
+  tiered: {
+    /** The codename to pass as `source` (e.g. charlie). */
+    key: string;
+    /** Display name of the source. */
+    name: string;
+    /** "free" if any key can query it, "paid" if it needs a Pro key. */
+    tier: "free" | "paid";
+    /** Descriptive tags, e.g. ["anime"]. */
+    tags: string[];
+    /** Only present when a valid key was passed: whether that key can query this source. */
+    available?: boolean;
+  }[];
+  /** True when every enabled source is available to all keys (paid is then empty). */
+  allFree: boolean;
+  /**
+   * Only present when a key was passed. valid is false for a malformed or unknown key,
+   * and null when the key could not be verified right now.
+   */
+  key?:
+    | { valid: true; type: "free" | "paid" }
+    | { valid: false; reason: "malformed" | "not_found" }
+    | { valid: null; reason: "verification_unavailable" };
+  /** Only present for a valid key: sources that key can query. */
+  available?: string[];
+  /** Only present for a valid key: enabled sources that key cannot query. */
+  restricted?: string[];
 };
 
 /**
@@ -101,11 +136,11 @@ export type QueryParams = {
   episode?: number;
   /** Encoding of the subtitle files. */
   encoding?: string;
-  /** ISO 3166 code of the subtitle desired. */
+  /** ISO 639-1 language code of the subtitle desired. */
   language?: string;
   /** Which subtitle file format you want */
   format?: string;
-  /** Determines if you get a hearing impaired subtitles */
+  /** When true, only hearing-impaired subtitles are returned. */
   hi?: boolean;
   /** The source where the subtitle will be scraped from. */
   source?: string;

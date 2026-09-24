@@ -14,7 +14,7 @@ const sampleResponse = [
     media: "Sample Media",
     display: "English",
     language: "en",
-    source: "opensubtitles",
+    source: "charlie",
     release: "Sample Release",
     releases: ["Sample Release"],
     fileName: "sample.srt",
@@ -47,7 +47,7 @@ describe("searchSubtitles", () => {
       language: ["en", "es"],
       format: ["srt", "ass"],
       encoding: "utf-8",
-      source: ["subdl", "subf2m"],
+      source: ["charlie", "lima"],
       hi: true,
     });
 
@@ -61,7 +61,7 @@ describe("searchSubtitles", () => {
     expect(requestUrl.searchParams.get("language")).toBe("en,es");
     expect(requestUrl.searchParams.get("format")).toBe("srt,ass");
     expect(requestUrl.searchParams.get("encoding")).toBe("utf-8");
-    expect(requestUrl.searchParams.get("source")).toBe("subdl,subf2m");
+    expect(requestUrl.searchParams.get("source")).toBe("charlie,lima");
     expect(requestUrl.searchParams.get("hi")).toBe("true");
 
     expect(result).toEqual(sampleResponse);

@@ -1,4 +1,4 @@
-import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails, SourcesResponse, DownloadOptions } from "./types";
+import { SearchSubtitlesParams, SubtitleData, QueryParams, ConfigurationOptions, TmdbSearchResult, TvDetails, SeasonDetails, SourcesResponse, DownloadOptions, SyncParams, SyncResult } from "./types";
 
 
 const config: { baseUrl: string; key?: string } = {
@@ -339,4 +339,62 @@ export async function getSourcesInfo(key: string | undefined = config.key): Prom
   const url = new URL(`${config.baseUrl}/sources`);
   if (key) url.searchParams.append("key", key);
   return getJson<SourcesResponse>(url.toString(), "Failed to fetch sources");
+}
+
+/**
+ * Wyzie Synced (Pro keys): re-times a subtitle to the viewer's own copy of the
+ * video. Pass the subtitle (a result or its url), or a title and language to
+ * let Wyzie pick the subtitle that fits best, plus the audio: the speech that
+ * {@link detectSpeech} found in it, or the audio/video file itself.
+ *
+ * Each successful sync costs 1 request; a sync that finds no match is not
+ * charged. The result's `url` is a normal download link with the fix applied.
+ *
+ * @example
+ * const speech = detectSpeech(audio.getChannelData(0), audio.sampleRate);
+ * const synced = await syncSubtitle({ tmdb_id: 286217, language: "en", speech });
+ * track.src = withDownloadOptions(synced.url, { to: "vtt" });
+ *
+ * @param {SyncParams} params - Which subtitle, and the audio.
+ * @returns {Promise<SyncResult>} The synced download link and the timing fix.
+ * @throws {WyzieError} When the API refuses (403 free key, 422 no match, …).
+ * @throws {Error} When the parameters are incomplete.
+ */
+export async function syncSubtitle(params: SyncParams): Promise<SyncResult> {
+  const fields: Record<string, string> = {};
+  const key = params.key ?? config.key;
+  if (key) fields.key = key;
+  if (params.subtitle) {
+    fields.url = typeof params.subtitle === "string" ? params.subtitle : params.subtitle.url;
+  } else {
+    const id = params.tmdb_id ?? params.imdb_id;
+    if (id === undefined || !params.language) throw new Error("syncSubtitle needs a subtitle, or tmdb_id/imdb_id with language");
+    fields.id = String(id);
+    fields.language = params.language;
+    if ((params.season === undefined) !== (params.episode === undefined)) throw new Error("season and episode go together");
+    if (params.season !== undefined) {
+      fields.season = String(params.season);
+      fields.episode = String(params.episode);
+    }
+  }
+  if (!params.speech && !params.media) throw new Error("syncSubtitle needs speech or media");
+
+  let response: Response;
+  if (params.speech) {
+    response = await fetch(`${config.baseUrl}/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...fields, speech: params.speech }),
+    });
+  } else {
+    const url = new URL(`${config.baseUrl}/sync`);
+    for (const [k, v] of Object.entries(fields)) url.searchParams.set(k, v);
+    response = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: params.media as BodyInit,
+    });
+  }
+  if (!response.ok) throw new WyzieError("Failed to sync subtitle", response.status, await readErrorBody(response));
+  return response.json();
 }

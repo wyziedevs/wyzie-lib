@@ -189,6 +189,49 @@ export type DownloadOptions = {
 };
 
 /**
+ * Input for {@link syncSubtitle} (Wyzie Synced, Pro keys): which subtitle,
+ * and the audio of the viewer's copy of the video.
+ */
+export type SyncParams = {
+  /** The subtitle to sync: a result from searchSubtitles, or its url. */
+  subtitle?: SubtitleData | string;
+  /** Or let Wyzie pick the best-fitting subtitle for this title (with language). */
+  tmdb_id?: number;
+  imdb_id?: string;
+  /** ISO 639-1 code of the subtitle language; required with tmdb_id / imdb_id. */
+  language?: string;
+  /** For TV, with tmdb_id / imdb_id: both or neither. */
+  season?: number;
+  episode?: number;
+  /** Where people talk, as [start, end] in seconds: what detectSpeech() returns. */
+  speech?: [number, number][];
+  /** Or the audio/video file itself (up to 95 MB: for a whole film, just its audio track). */
+  media?: Blob | ArrayBuffer | Uint8Array;
+  /** Your Pro API key (default: the configured key). */
+  key?: string;
+};
+
+/**
+ * Result of {@link syncSubtitle}.
+ */
+export type SyncResult = {
+  /** Download link with the timing fix applied (offset, fps); each download costs 1 request. */
+  url: string;
+  /** Seconds added to every line (after the frame-rate fix); negative is earlier. */
+  offset: number;
+  /** Frame-rate fix as "SUBTITLE_FPS:VIDEO_FPS" (e.g. "25:23.976"), or null. */
+  fps: string | null;
+  /** 0 to 1: how clearly this timing beats every other. */
+  confidence: number;
+  /** True when the subtitle already matched the audio. */
+  inSync: boolean;
+  /** Which subtitle was used (release, fileName, format, source, …). */
+  subtitle: Partial<SubtitleData>;
+  /** How many subtitles were tried. */
+  tried: number;
+};
+
+/**
  * Type for the configuration options for the library.
  */
 export type ConfigurationOptions = {

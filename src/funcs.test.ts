@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseToVTT, searchSubtitles, searchTmdb, getTvDetails, getSeasonDetails, getSources, getSourcesInfo, configure, withDownloadOptions, WyzieError } from "./main";
+import { parseToVTT, searchSubtitles, searchTmdb, getTvDetails, getSeasonDetails, getSources, getSourcesInfo, configure, withDownloadOptions, syncSubtitle, detectSpeech, WyzieError } from "./main";
 
 const originalFetch = globalThis.fetch;
 
@@ -408,5 +408,112 @@ describe("parseToVTT server-side conversion", () => {
     globalThis.fetch = mockFetch as unknown as typeof fetch;
     await parseToVTT("https://example.com/file.srt");
     expect(mockFetch.mock.calls[0][0]).toBe("https://example.com/file.srt");
+  });
+});
+
+describe("syncSubtitle", () => {
+  const synced = {
+    url: "https://sub.wyzie.io/c/vrf-abc/id/54321?format=srt&offset=4.09&tok=t",
+    offset: 4.09,
+    fps: null,
+    confidence: 0.62,
+    inSync: false,
+    subtitle: { format: "srt" },
+    tried: 1,
+  };
+
+  it("posts speech as JSON for a subtitle result", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(jsonResponse(200, synced));
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+    const result = await syncSubtitle({ subtitle: sampleResponse[0], speech: [[1, 2.5]], key: "k" });
+    expect(result.offset).toBe(4.09);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://sub.wyzie.io/sync");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ key: "k", url: sampleResponse[0].url, speech: [[1, 2.5]] });
+  });
+
+  it("sends a media file as the body, the rest in the query string", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(jsonResponse(200, synced));
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+    const media = new Uint8Array([1, 2, 3]);
+    await syncSubtitle({ tmdb_id: 1396, language: "en", season: 1, episode: 2, media, key: "k" });
+    const [url, init] = mockFetch.mock.calls[0];
+    const u = new URL(url);
+    expect(u.pathname).toBe("/sync");
+    expect(Object.fromEntries(u.searchParams)).toEqual({ key: "k", id: "1396", language: "en", season: "1", episode: "2" });
+    expect(init.body).toBe(media);
+    expect(init.headers["Content-Type"]).toBe("application/octet-stream");
+  });
+
+  it("rejects with the API's error", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      jsonResponse(403, { code: 403, message: "Paid feature", details: "Wyzie Synced needs a paid API key." }),
+    ) as unknown as typeof fetch;
+    const err = await syncSubtitle({ imdb_id: "tt3659388", language: "en", speech: [[1, 2]], key: "free" }).catch((e) => e);
+    expect(err).toBeInstanceOf(WyzieError);
+    expect(err.status).toBe(403);
+    expect(err.apiMessage).toBe("Paid feature");
+  });
+
+  it("refuses incomplete parameters before any request", async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+    await expect(syncSubtitle({ speech: [[1, 2]] })).rejects.toThrow(/tmdb_id/);
+    await expect(syncSubtitle({ tmdb_id: 1, language: "en" })).rejects.toThrow(/speech or media/);
+    await expect(syncSubtitle({ tmdb_id: 1, language: "en", season: 1, speech: [[1, 2]] })).rejects.toThrow(/season and episode/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("detectSpeech", () => {
+  const RATE = 8000;
+  const talk: [number, number][] = [
+    [5, 9],
+    [15, 16.5],
+    [30, 38],
+    [60, 62],
+    [90, 97],
+    [130, 131.5],
+    [150, 158],
+  ];
+  function audio(): Float32Array {
+    let x = 42;
+    const rand = () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const pcm = new Float32Array(180 * RATE);
+    for (let i = 0; i < pcm.length; i++) pcm[i] = (rand() - 0.5) * 0.006;
+    for (const [s, e] of talk) {
+      for (let t = s * 1000; t < e * 1000; t += 230) {
+        const a = Math.floor((t * RATE) / 1000);
+        const b = Math.min(Math.floor((Math.min(t + 160, e * 1000) * RATE) / 1000), pcm.length);
+        for (let i = a; i < b; i++) {
+          const env = Math.sin((Math.PI * (i - a)) / (b - a));
+          pcm[i] += env * 0.2 * (Math.sin((2 * Math.PI * 700 * i) / RATE) + 0.6 * Math.sin((2 * Math.PI * 1300 * i) / RATE) + (rand() - 0.5) * 0.5);
+        }
+      }
+    }
+    return pcm;
+  }
+  const overlap = (a: [number, number][], b: [number, number][]) =>
+    a.reduce((n, x) => n + b.reduce((m, y) => m + Math.max(0, Math.min(x[1], y[1]) - Math.max(x[0], y[0])), 0), 0);
+  const length = (a: [number, number][]) => a.reduce((n, x) => n + x[1] - x[0], 0);
+
+  it("finds the talk, in seconds, and little else", () => {
+    const found = detectSpeech(audio(), RATE);
+    expect(overlap(found, talk) / length(talk)).toBeGreaterThan(0.85);
+    expect(length(found) - overlap(found, talk)).toBeLessThan(0.1 * length(talk));
+  });
+
+  it("reads 16-bit PCM the same way", () => {
+    const f = audio();
+    const pcm = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round(f[i] * 32767)));
+    const a = detectSpeech(f, RATE);
+    expect(overlap(detectSpeech(pcm, RATE), a) / length(a)).toBeGreaterThan(0.97);
+  });
+
+  it("returns nothing for silence or no samples", () => {
+    expect(detectSpeech(new Float32Array(RATE * 30), RATE)).toEqual([]);
+    expect(detectSpeech(new Float32Array(0), RATE)).toEqual([]);
   });
 });

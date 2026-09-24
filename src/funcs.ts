@@ -355,11 +355,62 @@ export async function getStatus(days: number = 0): Promise<StatusReport> {
   return getJson<StatusReport>(url.toString(), "Failed to fetch status");
 }
 
+/** Sent as one request below this size; chunked (POST /sync/upload) above it. */
+const SYNC_SINGLE_SHOT_MAX_BYTES = 90 * 1024 * 1024;
+/** Used if the server doesn't say otherwise when a chunked upload starts. */
+const SYNC_DEFAULT_CHUNK_BYTES = 64 * 1024 * 1024;
+/** Extra attempts for a chunk that fails to a network error or a 5xx. */
+const SYNC_CHUNK_RETRIES = 2;
+
+function mediaByteLength(media: Blob | ArrayBuffer | Uint8Array): number {
+  return media instanceof Blob ? media.size : media.byteLength;
+}
+
+function mediaSlice(media: Blob | ArrayBuffer | Uint8Array, start: number, end: number): Blob | ArrayBuffer | Uint8Array {
+  if (media instanceof Blob) return media.slice(start, end);
+  if (media instanceof ArrayBuffer) return media.slice(start, end);
+  return media.subarray(start, end);
+}
+
+/** Uploads media in pieces via POST /sync/upload, returning the finished session's id. */
+async function uploadMediaInChunks(media: Blob | ArrayBuffer | Uint8Array, key: string): Promise<string> {
+  const startResponse = await fetch(`${config.baseUrl}/sync/upload?key=${encodeURIComponent(key)}`, { method: "POST" });
+  if (!startResponse.ok) throw new WyzieError("Failed to start upload", startResponse.status, await readErrorBody(startResponse));
+  const { uploadId, chunkMaxBytes } = (await startResponse.json()) as { uploadId: string; chunkMaxBytes?: number };
+  const chunkBytes = chunkMaxBytes && chunkMaxBytes > 0 ? chunkMaxBytes : SYNC_DEFAULT_CHUNK_BYTES;
+
+  const total = mediaByteLength(media);
+  for (let offset = 0, index = 0; offset < total; offset += chunkBytes, index++) {
+    const piece = mediaSlice(media, offset, Math.min(offset + chunkBytes, total));
+    for (let attempt = 0; ; attempt++) {
+      let response: Response;
+      try {
+        response = await fetch(`${config.baseUrl}/sync/upload/${uploadId}?key=${encodeURIComponent(key)}`, {
+          method: "POST",
+          headers: { "X-Chunk-Index": String(index) },
+          body: piece as BodyInit,
+        });
+      } catch (e) {
+        if (attempt >= SYNC_CHUNK_RETRIES) throw e;
+        continue;
+      }
+      if (response.ok) break;
+      if (response.status < 500 || attempt >= SYNC_CHUNK_RETRIES) {
+        throw new WyzieError("Failed to upload a chunk", response.status, await readErrorBody(response));
+      }
+    }
+  }
+  return uploadId;
+}
+
 /**
  * Wyzie Synced (Pro keys): re-times a subtitle to the viewer's own copy of the
  * video. Pass the subtitle (a result or its url), or a title and language to
  * let Wyzie pick the subtitle that fits best, plus the audio: the speech that
- * {@link detectSpeech} found in it, or the audio/video file itself.
+ * {@link detectSpeech} found in it, or the audio/video file itself. A big
+ * file (over ~90 MB) is uploaded in chunks automatically -- Cloudflare caps
+ * a single request around 100 MB, so this is the only way in for a whole
+ * movie file without running into that.
  *
  * Each successful sync costs 5 requests; a sync that finds no match is not
  * charged. The result's `url` is a normal download link with the fix applied.
@@ -399,6 +450,14 @@ export async function syncSubtitle(params: SyncParams): Promise<SyncResult> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...fields, speech: params.speech }),
+    });
+  } else if (mediaByteLength(params.media!) > SYNC_SINGLE_SHOT_MAX_BYTES) {
+    if (!key) throw new Error("syncSubtitle needs a paid API key to upload a file this large");
+    const uploadId = await uploadMediaInChunks(params.media!, key);
+    response = await fetch(`${config.baseUrl}/sync/upload/${uploadId}/finish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
     });
   } else {
     const url = new URL(`${config.baseUrl}/sync`);

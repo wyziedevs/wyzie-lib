@@ -205,7 +205,13 @@ export type SyncParams = {
   episode?: number;
   /** Where people talk, as [start, end] in seconds: what detectSpeech() returns. */
   speech?: [number, number][];
-  /** Or the audio/video file itself (up to 95 MB: for a whole film, just its audio track). */
+  /**
+   * Or the audio/video file itself -- a whole film is fine, up to 8 GB.
+   * `syncSubtitle` sends it in one request under ~90 MB; above that it's
+   * uploaded in chunks automatically (Cloudflare caps a single request
+   * around 100 MB). Either way, only the audio track is used and the
+   * upload is discarded once the sync finishes.
+   */
   media?: Blob | ArrayBuffer | Uint8Array;
   /** Your Pro API key (default: the configured key). */
   key?: string;
